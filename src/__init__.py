@@ -220,7 +220,7 @@ def mapCardTypesDialog() -> None:
         nonlocal fields_layout, anki_note_types, migaku_note_types, source_note_kind_combo, dest_note_kind_combo, changed_mapping
 
         selected_migaku_deck = migaku_decks[migaku_deck_combo.currentIndex()]
-        selected_anki_deck = migaku_decks[anki_deck_combo.currentIndex()]
+        selected_anki_deck = anki_decks[anki_deck_combo.currentIndex()]
 
         selected_anki_note_type = anki_note_types[dest_note_kind_combo.currentIndex()]
         selected_migaku_note_type = migaku_note_types[source_note_kind_combo.currentIndex()]
@@ -450,7 +450,7 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                     if not silent:
                         QMessageBox.critical(mw, "Error", f"Import failed. The \"{migaku_field_type}\" field type isn't implemented, please report this bug.")
                     return False
-            new_notes.append((migaku_deck_id, new_note))
+            new_notes.append((used_mapping["anki_deck_id"], new_note))
 
         sync_new_card_count = len(new_notes)
         if len(new_notes) == 0:

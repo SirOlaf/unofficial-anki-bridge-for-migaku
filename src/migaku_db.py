@@ -112,6 +112,8 @@ class DbRowWordList:
     knownStatus: str
     hasCard: int
     tracked: int
+    created: int = 0
+    isModern: int = 1
 
 
 def _dict_to_ordered_row_by_dataclass(j, t) -> list[tuple[str, Any]]:
