@@ -10,7 +10,7 @@ from .migaku_db import MigakuDb
 
 class MigakuManager:
     def __init__(self, session: MigakuSession, srs_db_path: str = "migakusrs.db"):
-        self._session = session
+        self.session = session
         self._srs_db_path = pathlib.Path(srs_db_path)
         self.db: Optional[MigakuDb] = None
         self._local_word_changes: list[dict[str, Any]] = []
@@ -19,14 +19,14 @@ class MigakuManager:
 
     def force_download_db(self):
         self._srs_db_path.absolute().parent.mkdir(parents=True, exist_ok=True)
-        self._srs_db_path.write_bytes(self._session.force_download_srs_db())
+        self._srs_db_path.write_bytes(self.session.force_download_srs_db())
         self._open_db()
 
     def set_auth(self, token: FirebaseAuthToken):
-        self._session._auth_token = token
+        self.session._auth_token = token
 
     def has_auth(self):
-        return self._session._auth_token is not None
+        return self.session._auth_token is not None
 
     def _open_db(self):
         assert self._srs_db_path.exists()
@@ -63,7 +63,7 @@ class MigakuManager:
         timestamp = get_timestamp_ms()
         last_sync_times = self.db.fetch_last_sync_times()
         #self._session.push_sync(words=self._local_word_changes)
-        changes = self._session.pull_sync(last_sync_times.last_pull)
+        changes = self.session.pull_sync(last_sync_times.last_pull)
         if changeset_cb is None or changeset_cb(changes):
             self.db.apply_sync_changeset(changes)
             self.db.update_sync_times(timestamp, timestamp)

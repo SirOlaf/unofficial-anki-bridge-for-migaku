@@ -2,6 +2,7 @@ import json
 import pathlib
 import os
 from typing import Optional
+import tempfile
 
 import anki
 import anki.collection
@@ -395,8 +396,26 @@ def mapCardTypesDialog() -> None:
 
 def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Collection, silent: bool) -> int:
     sync_new_card_count = 0
+    new_notes = []
+    should_add_to_anki = False
+
+    def get_ext(p: str):
+        _, ext = os.path.splitext(p)
+        return ext
+
+    def fetch_media(path: str) -> Optional[str]:
+        data = migaku.session.try_fetch_srs_media(path)
+        if data is None: return None
+        tmp_path = None
+        with tempfile.NamedTemporaryFile(delete=False, suffix=get_ext(path)) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        new_filename = mw.col.media.add_file(tmp_path)
+        pathlib.Path(tmp_path).unlink(missing_ok=True)
+        return new_filename
+
     def sync_callback(incoming_changes) -> bool:
-        nonlocal sync_new_card_count
+        nonlocal sync_new_card_count, new_notes, should_add_to_anki
         new_cards = []
         for card in incoming_changes["cards"]:
             if card["lessonId"] is not None:
@@ -408,7 +427,6 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
             if not card["del"]:
                 new_cards.append(card)
 
-        new_notes = []
         for card in new_cards:
             migaku_deck_id = card["deckId"]
             migaku_note_type = migaku.db.fetch_note_type_by_id(card["cardTypeId"])
@@ -437,15 +455,16 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                 migaku_field_def = migaku_field_def_map[used_mapping["migaku_fields"][migaku_idx]]
                 anki_field_name = anki_field_def_map[used_mapping["anki_fields"][i]]["name"]
                 migaku_field_type = migaku_field_def["type"]
-                # TODO: IMAGE and AUDIO
                 if migaku_field_type == "SYNTAX":
                     new_note[anki_field_name] = migaku_card_fields[migaku_idx]
                 elif migaku_field_type == "TEXT":
                     new_note[anki_field_name] = migaku_card_fields[migaku_idx]
                 elif migaku_field_type == "IMAGE":
-                    new_note[anki_field_name] = ""
+                    new_filename = fetch_media(migaku_card_fields[migaku_idx][5:])
+                    new_note[anki_field_name] = f'<img src="{new_filename}">'
                 elif migaku_field_type in ["AUDIO", "AUDIO_LONG"]:
-                    new_note[anki_field_name] = ""
+                    new_filename = fetch_media(migaku_card_fields[migaku_idx][5:])
+                    new_note[anki_field_name] = f'[sound:{new_filename}]'
                 else:
                     if not silent:
                         QMessageBox.critical(mw, "Error", f"Import failed. The \"{migaku_field_type}\" field type isn't implemented, please report this bug.")
@@ -470,11 +489,14 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                 msg.exec()
                 if msg.clickedButton() != continue_button:
                     return False
-
-            for new_note in new_notes:
-                col.add_note(new_note[1], new_note[0])
+        should_add_to_anki = True
         return True
     migaku.do_sync(sync_callback)
+
+    if should_add_to_anki:
+        for new_note in new_notes:
+            col.add_note(new_note[1], new_note[0])
+
     return sync_new_card_count
 
 

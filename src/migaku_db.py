@@ -1,6 +1,7 @@
 from collections import namedtuple, OrderedDict
 import dataclasses
 from typing import Any
+from threading import Lock
 
 import sqlite3
 
@@ -128,6 +129,7 @@ class MigakuDb:
     def __init__(self, db_con: sqlite3.Connection):
         self._handle = db_con
         self._cursor = self._handle.cursor()
+        self._lock = Lock()
 
     def _commit(self):
         self._handle.commit()
@@ -137,15 +139,17 @@ class MigakuDb:
         return DbResSyncTimes(last_pull=res["pullSync"], last_push=res["pushSync"])
 
     def update_sync_times(self, pull_time: int, push_time: int):
-        self._cursor.execute('UPDATE local_data SET last_sync = ? WHERE id = "pullSync"', [pull_time])
-        self._cursor.execute('UPDATE local_data SET last_sync = ? WHERE id = "pushSync"', [push_time])
-        self._commit()
+        with self._lock:
+            self._cursor.execute('UPDATE local_data SET last_sync = ? WHERE id = "pullSync"', [pull_time])
+            self._cursor.execute('UPDATE local_data SET last_sync = ? WHERE id = "pushSync"', [push_time])
+            self._commit()
 
     def _do_dict_put(self, table: str, value: Any, t: type):
-        fields = _dict_to_ordered_row_by_dataclass(value, t)
-        questionmarks = ", ".join(["?"] * len(fields))
-        self._cursor.execute(f'INSERT OR REPLACE INTO {table} VALUES({questionmarks})', [x[1] for x in fields])
-        self._commit() # TODO: Maybe put this somewhere else
+        with self._lock:
+            fields = _dict_to_ordered_row_by_dataclass(value, t)
+            questionmarks = ", ".join(["?"] * len(fields))
+            self._cursor.execute(f'INSERT OR REPLACE INTO {table} VALUES({questionmarks})', [x[1] for x in fields])
+            self._commit() # TODO: Maybe put this somewhere else
 
 
     def put_card(self, card_json: Any):
@@ -175,7 +179,7 @@ class MigakuDb:
             result.append(DbRowDeck(*r))
         return result
 
-    def fetch_note_type_by_id(self, id: int) -> list[DbRowCardType]:
+    def fetch_note_type_by_id(self, id: int) -> DbRowCardType:
         res = self._cursor.execute("SELECT * FROM card_type WHERE id=?", [id])
         return DbRowCardType(*res.fetchone())
 

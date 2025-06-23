@@ -71,6 +71,16 @@ class MigakuSession:
         compressed_db = resp.content
         return gzip.decompress(compressed_db)
 
+    def try_fetch_srs_media(self, path: str) -> Optional[bytes]:
+        if self._auth_token is None: raise ValueError("Missing auth token")
+        resp = requests.get(
+            f"https://file-sync-worker-api.migaku.com/data/{path}",
+            headers={"Authorization": "Bearer " + self._auth_token.get()},
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.content
+
     def push_sync(self, words):
         if self._auth_token is None: raise ValueError("Missing auth token")
         data = {
