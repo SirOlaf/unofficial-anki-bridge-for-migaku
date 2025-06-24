@@ -474,10 +474,16 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                     new_note[anki_field_name] = migaku_card_fields[migaku_idx]
                 elif migaku_field_type == "IMAGE":
                     new_filename = fetch_media(migaku_card_fields[migaku_idx][5:])
-                    new_note[anki_field_name] = f'<img src="{new_filename}">'
+                    if new_filename is not None:
+                        new_note[anki_field_name] = f'<img src="{new_filename}">'
+                    else:
+                        new_note[anki_field_name] = ""
                 elif migaku_field_type in ["AUDIO", "AUDIO_LONG"]:
                     new_filename = fetch_media(migaku_card_fields[migaku_idx][5:])
-                    new_note[anki_field_name] = f'[sound:{new_filename}]'
+                    if new_filename is not None:
+                        new_note[anki_field_name] = f'[sound:{new_filename}]'
+                    else:
+                        new_note[anki_field_name] = ""
                 else:
                     if not silent:
                         QMessageBox.critical(mw, "Error", f"Import failed. The \"{migaku_field_type}\" field type isn't implemented, please report this bug.")
