@@ -131,7 +131,7 @@ class MigakuDb:
         self._cursor = self._handle.cursor()
         self._lock = Lock()
 
-    def _commit(self):
+    def commit(self):
         self._handle.commit()
 
     def fetch_last_sync_times(self) -> DbResSyncTimes:
@@ -142,14 +142,14 @@ class MigakuDb:
         with self._lock:
             self._cursor.execute('UPDATE local_data SET last_sync = ? WHERE id = "pullSync"', [pull_time])
             self._cursor.execute('UPDATE local_data SET last_sync = ? WHERE id = "pushSync"', [push_time])
-            self._commit()
+            self.commit()
 
     def _do_dict_put(self, table: str, value: Any, t: type):
         with self._lock:
             fields = _dict_to_ordered_row_by_dataclass(value, t)
             questionmarks = ", ".join(["?"] * len(fields))
             self._cursor.execute(f'INSERT OR REPLACE INTO {table} VALUES({questionmarks})', [x[1] for x in fields])
-            self._commit() # TODO: Maybe put this somewhere else
+            self.commit() # TODO: Maybe put this somewhere else
 
 
     def put_card(self, card_json: Any):
@@ -160,6 +160,12 @@ class MigakuDb:
 
     def put_word_status(self, word: Any):
         self._do_dict_put("WordList", word, DbRowWordList)
+
+    def put_deck(self, deck: Any):
+        self._do_dict_put("deck", deck, DbRowDeck)
+
+    def put_card_type(self, card_type: Any):
+        self._do_dict_put("card_type", card_type, DbRowCardType)
 
     def fetch_available_langcodes(self) -> set[str]:
         res = self._cursor.execute("SELECT lang FROM card_type ORDER BY id")
@@ -179,9 +185,17 @@ class MigakuDb:
             result.append(DbRowDeck(*r))
         return result
 
+    def fetch_deck_by_id(self, id: int) -> DbRowDeck:
+        res = self._cursor.execute("SELECT * FROM deck WHERE id=?", [id])
+        return DbRowDeck(*res.fetchone())
+
     def fetch_note_type_by_id(self, id: int) -> DbRowCardType:
         res = self._cursor.execute("SELECT * FROM card_type WHERE id=?", [id])
         return DbRowCardType(*res.fetchone())
+
+    def fetch_card_by_id(self, id: int) -> DbRowCard:
+        res = self._cursor.execute("SELECT * FROM card WHERE id=?", [id])
+        return DbRowCard(*res.fetchone())
 
     def apply_sync_changeset(self, j: Any):
         for group, value in j.items():
@@ -195,7 +209,13 @@ class MigakuDb:
             elif group == "words":
                 for word in value:
                     self.put_word_status(word)
-            elif group in ["decks", "cardTypes", "vacations", "reviews", "reviewHistory"]:
+            elif group == "decks":
+                for deck in value:
+                    self.put_deck(deck)
+            elif group == "cardTypes":
+                for card_type in value:
+                    self.put_card_type(card_type)
+            elif group in ["vacations", "reviews", "reviewHistory"]:
                 pass # TODO: These MIGHT be relevant one day, but definitely not now
             elif group in ["config", "keyValue", "learningMaterials", "lessons"]:
                 pass # These are not relevant for us

@@ -64,6 +64,14 @@ class MigakuManager:
         last_sync_times = self.db.fetch_last_sync_times()
         #self._session.push_sync(words=self._local_word_changes)
         changes = self.session.pull_sync(last_sync_times.last_pull)
+
+        # We MUST update decks and card types so the user can be notified and contribute new mappings.
+        # As the database updates them too, this isn't particularly efficient but it should be rare enough to be fine
+        for note_type in changes["cardTypes"]:
+            self.db.put_card_type(note_type)
+        for deck in changes["decks"]:
+            self.db.put_deck(deck)
+
         if changeset_cb is None or changeset_cb(changes):
             self.db.apply_sync_changeset(changes)
             self.db.update_sync_times(timestamp, timestamp)

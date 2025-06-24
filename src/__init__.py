@@ -1,7 +1,7 @@
 import json
 import pathlib
 import os
-from typing import Optional
+from typing import Optional, Any
 import tempfile
 import re
 
@@ -24,6 +24,7 @@ config_key_note_type_mapping = "note_type_mappings"
 config_key_refresh_token = "refresh_token"
 config_key_pull_on_sync = "pull_on_sync"
 config_key_remove_syntax = "remove_syntax"
+config_key_ignored_decks_and_notes = "ignored_decks_and_notes"
 
 def commit_config():
     assert config is not None
@@ -54,6 +55,34 @@ def config_put_note_type_mapping(mapping):
         new_mappings.append(mapping)
     config[config_key_note_type_mapping] = new_mappings
     commit_config()
+def config_delete_note_type_mapping(migaku_deck_id: int, migaku_note_id: int):
+    assert config is not None
+    new_mappings = []
+    for old in config.get(config_key_note_type_mapping, []):
+        if old["migaku_deck_id"] != migaku_deck_id or old["migaku_note_id"] != migaku_note_id:
+            new_mappings.append(old)
+    config[config_key_note_type_mapping] = new_mappings
+    commit_config()
+
+def config_get_ignored_decks_and_notes() -> list[Any]:
+    assert config is not None
+    return config.get(config_key_ignored_decks_and_notes, [])
+def config_put_ignored_deck_and_note(pair: Any):
+    assert config is not None
+    cur_pairs = config_get_ignored_decks_and_notes()
+    if pair not in cur_pairs:
+        cur_pairs.append(pair)
+    config[config_key_ignored_decks_and_notes] = cur_pairs
+    commit_config()
+def config_delete_ignored_deck_and_note(pair: Any):
+    assert config is not None
+    new_pairs = []
+    for old in config_get_ignored_decks_and_notes():
+        if old != pair:
+            new_pairs.append(old)
+    config[config_key_ignored_decks_and_notes] = new_pairs
+    commit_config()
+
 
 def config_try_get_refresh_token() -> Optional[str]:
     assert config is not None
@@ -197,8 +226,6 @@ def ensure_migaku_setup(silent: bool = False) -> bool:
     return ensure_migaku_auth(silent=silent) and ensureLocalMmDb(silent=silent)
 
 
-# TODO: ADD DECK SELECTION! IT MUST BE PART OF THE MAPPING AND SHOULD BE ANOTHER LAYER
-#       THE USER SHOULD SELECT A LANGUAGE, THEN A DECK, AND ONLY THEN BEGIN MAPPING CARD TYPES
 def mapCardTypesDialog() -> None:
     if not ensure_migaku_setup():
         return
@@ -223,6 +250,7 @@ def mapCardTypesDialog() -> None:
     dest_note_kind_combo: Optional[QComboBox] = None
     scroll_content_widget: Optional[QWidget] = None
     fields_layout: Optional[QGridLayout] = None
+    ignore_combo_checkbox: Optional[QCheckBox] = None
 
     save_button = QPushButton("Save")
     mapping_status_label = QLabel("")
@@ -237,9 +265,14 @@ def mapCardTypesDialog() -> None:
         selected_anki_note_type = anki_note_types[dest_note_kind_combo.currentIndex()]
         selected_migaku_note_type = migaku_note_types[source_note_kind_combo.currentIndex()]
 
+        this_pair = {
+            "migaku_deck_id": selected_migaku_deck.id,
+            "migaku_note_id": selected_migaku_note_type.id,
+        }
+        existing_ignored_pairs = config_get_ignored_decks_and_notes()
         existing_mapping = config_try_get_note_type_mapping(migaku_deck_id=selected_migaku_deck.id, migaku_note_id=selected_migaku_note_type.id)
         should_continue = True
-        if existing_mapping and (existing_mapping["anki_deck_id"] == selected_anki_deck.id or existing_mapping["anki_note_id"] != selected_anki_note_type["id"]):
+        if this_pair in existing_ignored_pairs or (existing_mapping and (existing_mapping["anki_deck_id"] == selected_anki_deck.id or existing_mapping["anki_note_id"] != selected_anki_note_type["id"])):
             msg = QMessageBox(win)
             msg.setText("You are about to replace a mapping. Do you want to proceed?")
             yes_button = msg.addButton("Yes", QMessageBox.ButtonRole.AcceptRole)
@@ -250,25 +283,30 @@ def mapCardTypesDialog() -> None:
         if not should_continue:
             return
 
-        indices = []
-        for i in range(fields_layout.rowCount()):
-            x = fields_layout.itemAtPosition(i, 0)
-            if x is None: continue
-            w = x.widget()
-            if isinstance(w, QComboBox):
-                indices.append(max(w.currentIndex() - 1, -1))
-        assert len(indices) == len(selected_anki_note_type["flds"])
+        if ignore_combo_checkbox is not None and ignore_combo_checkbox.isChecked():
+            config_put_ignored_deck_and_note(this_pair)
+            config_delete_note_type_mapping(migaku_deck_id=this_pair["migaku_deck_id"], migaku_note_id=this_pair["migaku_note_id"])
+        else:
+            indices = []
+            for i in range(fields_layout.rowCount()):
+                x = fields_layout.itemAtPosition(i, 0)
+                if x is None: continue
+                w = x.widget()
+                if isinstance(w, QComboBox):
+                    indices.append(max(w.currentIndex() - 1, -1))
+            assert len(indices) == len(selected_anki_note_type["flds"])
 
-        mapping_config = {
-            "anki_note_id": selected_anki_note_type["id"],
-            "migaku_note_id": selected_migaku_note_type.id,
-            "anki_deck_id": selected_anki_deck.id,
-            "migaku_deck_id": selected_migaku_deck.id,
-            "anki_fields": [x["name"] for x in selected_anki_note_type["flds"]],
-            "migaku_fields": [x["name"] for x in json.loads(selected_migaku_note_type.config)["fields"]],
-            "mapped_migaku_indices": indices
-        }
-        config_put_note_type_mapping(mapping_config)
+            mapping_config = {
+                "anki_note_id": selected_anki_note_type["id"],
+                "migaku_note_id": selected_migaku_note_type.id,
+                "anki_deck_id": selected_anki_deck.id,
+                "migaku_deck_id": selected_migaku_deck.id,
+                "anki_fields": [x["name"] for x in selected_anki_note_type["flds"]],
+                "migaku_fields": [x["name"] for x in json.loads(selected_migaku_note_type.config)["fields"]],
+                "mapped_migaku_indices": indices
+            }
+            config_put_note_type_mapping(mapping_config)
+            config_delete_ignored_deck_and_note(this_pair["migaku_deck_id"])
         mapping_status_label.setText("Saved")
         save_button.setEnabled(False)
         changed_mapping = False
@@ -297,16 +335,26 @@ def mapCardTypesDialog() -> None:
         selected_anki_deck = anki_decks[anki_deck_combo.currentIndex()]
         selected_migaku_deck = migaku_decks[migaku_deck_combo.currentIndex()]
 
+        this_pair = {
+            "migaku_deck_id": selected_migaku_deck.id,
+            "migaku_note_id": selected_mm_note_type.id,
+        }
+        ignored_pairs = config_get_ignored_decks_and_notes()
         existing_mapping = config_try_get_note_type_mapping(migaku_deck_id=selected_migaku_deck.id, migaku_note_id=selected_mm_note_type.id)
-        if not existing_mapping:
-            save_button.setEnabled(True)
-            mapping_status_label.setText("This is a new mapping")
+        if this_pair in ignored_pairs:
+            mapping_status_label.setText("This deck + card type combination is ignored")
+            if ignore_combo_checkbox is not None:
+                ignore_combo_checkbox.setChecked(True)
         else:
-            if existing_mapping["anki_deck_id"] == selected_anki_deck.id and existing_mapping["anki_note_id"] == selected_anki_note_type["id"]:
-                mapping_status_label.setText("This is an existing mapping")
-            else:
-                mapping_status_label.setText("There is a mapping to different anki note type or deck already")
+            if not existing_mapping:
                 save_button.setEnabled(True)
+                mapping_status_label.setText("This is a new mapping")
+            else:
+                if existing_mapping["anki_deck_id"] == selected_anki_deck.id and existing_mapping["anki_note_id"] == selected_anki_note_type["id"]:
+                    mapping_status_label.setText("This is an existing mapping")
+                else:
+                    mapping_status_label.setText("There is a mapping to different anki note type or deck already")
+                    save_button.setEnabled(True)
 
         for i, f in enumerate(selected_anki_note_type["flds"], start=1):
             combo = QComboBox()
@@ -326,7 +374,7 @@ def mapCardTypesDialog() -> None:
 
 
     def create_deck_selection_ui():
-        nonlocal source_note_kind_combo, dest_note_kind_combo, migaku_deck_combo, anki_deck_combo
+        nonlocal source_note_kind_combo, dest_note_kind_combo, migaku_deck_combo, anki_deck_combo, ignore_combo_checkbox, fields_layout
 
         grid = QGridLayout()
         lang_selection_combo_box = QComboBox()
@@ -340,6 +388,8 @@ def mapCardTypesDialog() -> None:
         source_note_kind_combo.addItems([])
 
         def on_selection_change():
+            if ignore_combo_checkbox is not None:
+                ignore_combo_checkbox.setChecked(False)
             update_fields_display()
 
         dest_note_kind_combo = QComboBox()
@@ -357,10 +407,26 @@ def mapCardTypesDialog() -> None:
         grid.addWidget(source_note_kind_combo, 2, 1)
         grid.addWidget(QLabel("<b>Anki  Note type:</b>"), 2, 2)
         grid.addWidget(dest_note_kind_combo, 2, 3)
+
+        grid.addWidget(QLabel("Ignore deck+card type combo"), 3, 0)
+        ignore_combo_checkbox = QCheckBox()
+        def on_toggle_ignore():
+            nonlocal scroll_content_widget, ignore_combo_checkbox
+            assert ignore_combo_checkbox is not None
+            if scroll_content_widget is None: return
+            if ignore_combo_checkbox.isChecked():
+                scroll_content_widget.setEnabled(False)
+            else:
+                scroll_content_widget.setEnabled(True)
+        ignore_combo_checkbox.toggled.connect(on_toggle_ignore)
+        grid.addWidget(ignore_combo_checkbox, 3, 1)
+
         main_layout.addLayout(grid)
 
         def on_lang_changed():
             nonlocal migaku_note_types, migaku_decks, source_note_kind_combo
+            ignore_combo_checkbox.setChecked(False)
+
             migaku_decks = [x for x in migaku.db.fetch_decks_for_language(lang_selection_combo_box.currentText()) if x.del_ == 0]
             migaku_deck_combo.clear()
             migaku_deck_combo.addItems([x.name for x in migaku_decks])
@@ -371,6 +437,7 @@ def mapCardTypesDialog() -> None:
         lang_selection_combo_box.currentIndexChanged.connect(on_lang_changed)
         on_lang_changed() # initial contents
 
+        migaku_deck_combo.currentIndexChanged.connect(on_selection_change)
         source_note_kind_combo.currentIndexChanged.connect(on_selection_change)
         dest_note_kind_combo.currentIndexChanged.connect(on_selection_change)
 
@@ -425,6 +492,13 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
         pathlib.Path(tmp_path).unlink(missing_ok=True)
         return new_filename
 
+    def report_error(message: str):
+        nonlocal silent
+        if silent:
+            raise ValueError(message)
+        else:
+            QMessageBox.critical(mw, ADDON_NAME, message)
+
     def sync_callback(incoming_changes) -> bool:
         nonlocal sync_new_card_count, new_notes, should_add_to_anki
         new_cards = []
@@ -438,13 +512,24 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
             if not card["del"]:
                 new_cards.append(card)
 
+        ignored_pairs = config_get_ignored_decks_and_notes()
         for card in new_cards:
+            this_pair = {
+                "migaku_deck_id": card["deckId"],
+                "migaku_note_id": card["cardTypeId"],
+            }
+            if this_pair in ignored_pairs:
+                # Ignored pairs get skipped
+                continue
+            if card["mod"] != card["created"]:
+                # If the modification time is not the creation time we are not interested for now
+                continue
             migaku_deck_id = card["deckId"]
             migaku_note_type = migaku.db.fetch_note_type_by_id(card["cardTypeId"])
+            migaku_deck_info = migaku.db.fetch_deck_by_id(migaku_deck_id)
             used_mapping = config_try_get_note_type_mapping(migaku_deck_id=migaku_deck_id, migaku_note_id=card["cardTypeId"])
             if used_mapping is None:
-                if not silent:
-                    QMessageBox.critical(mw, "Error", f"Import failed. Please create a mapping for the \"{migaku_note_type.name} ({migaku_note_type.lang})\" note type from Migaku.")
+                report_error(f"MM import failed. Please create a mapping for the \"{migaku_note_type.name} ({migaku_note_type.lang})\" note type from MM's \"{migaku_deck_info.name}\" deck.")
                 return False
 
             anki_note_type = col.models.get(used_mapping["anki_note_id"])
@@ -485,8 +570,7 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                     else:
                         new_note[anki_field_name] = ""
                 else:
-                    if not silent:
-                        QMessageBox.critical(mw, "Error", f"Import failed. The \"{migaku_field_type}\" field type isn't implemented, please report this bug.")
+                    report_error(f"Import failed. The \"{migaku_field_type}\" field type isn't implemented, please report this bug.")
                     return False
             new_notes.append((used_mapping["anki_deck_id"], new_note))
 

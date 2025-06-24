@@ -196,3 +196,5 @@ cython_debug/
 .DS_Store
 *.ankiaddon
 src/bundle
+test.db
+out*.json
