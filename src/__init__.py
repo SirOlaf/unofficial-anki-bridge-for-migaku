@@ -3,6 +3,7 @@ import pathlib
 import os
 from typing import Optional
 import tempfile
+import re
 
 import anki
 import anki.collection
@@ -22,6 +23,7 @@ config = mw.addonManager.getConfig(__name__)
 config_key_note_type_mapping = "note_type_mappings"
 config_key_refresh_token = "refresh_token"
 config_key_pull_on_sync = "pull_on_sync"
+config_key_remove_syntax = "remove_syntax"
 
 def commit_config():
     assert config is not None
@@ -69,6 +71,15 @@ def config_get_pull_on_sync() -> bool:
 def config_put_pull_on_sync(value: bool):
     assert config is not None
     config[config_key_pull_on_sync] = value
+    commit_config()
+
+def config_get_remove_syntax() -> bool:
+    assert config is not None
+    return config.get(config_key_remove_syntax, False)
+
+def config_put_remove_syntax(value: bool):
+    assert config is not None
+    config[config_key_remove_syntax] = value
     commit_config()
 
 
@@ -456,7 +467,9 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                 anki_field_name = anki_field_def_map[used_mapping["anki_fields"][i]]["name"]
                 migaku_field_type = migaku_field_def["type"]
                 if migaku_field_type == "SYNTAX":
-                    new_note[anki_field_name] = migaku_card_fields[migaku_idx]
+                    field_str: str = migaku_card_fields[migaku_idx]
+                    # TODO: This could be translated into ruby text
+                    new_note[anki_field_name] = re.sub(r"\[.*?\]", "", field_str).replace("{", "").replace("}", "")
                 elif migaku_field_type == "TEXT":
                     new_note[anki_field_name] = migaku_card_fields[migaku_idx]
                 elif migaku_field_type == "IMAGE":
@@ -559,6 +572,15 @@ def show_settings() -> None:
     auto_pull_mm_checkbox.toggled.connect(on_toggle_auto_pull)
     auto_pull_mm_checkbox.setChecked(config_get_pull_on_sync())
     grid.addWidget(auto_pull_mm_checkbox, 0, 1)
+
+    grid.addWidget(QLabel("Remove Migaku Syntax"), 1, 0)
+    remove_migaku_syntax_checkbox = QCheckBox()
+    def on_toggle_remove_migaku_syntax():
+        nonlocal remove_migaku_syntax_checkbox
+        config_put_remove_syntax(remove_migaku_syntax_checkbox.isChecked())
+    remove_migaku_syntax_checkbox.toggled.connect(on_toggle_remove_migaku_syntax)
+    remove_migaku_syntax_checkbox.setChecked(config_get_remove_syntax())
+    grid.addWidget(remove_migaku_syntax_checkbox, 1, 1)
 
     win.setLayout(grid)
     win.exec()

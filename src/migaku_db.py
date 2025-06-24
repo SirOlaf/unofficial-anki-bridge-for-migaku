@@ -197,7 +197,7 @@ class MigakuDb:
                     self.put_word_status(word)
             elif group in ["decks", "cardTypes", "vacations", "reviews", "reviewHistory"]:
                 pass # TODO: These MIGHT be relevant one day, but definitely not now
-            elif group in ["config", "keyValue", "learningMaterials", "lesson"]:
+            elif group in ["config", "keyValue", "learningMaterials", "lessons"]:
                 pass # These are not relevant for us
             else:
                 if value:
