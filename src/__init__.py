@@ -507,8 +507,7 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                 continue
             for i in range(len(new_cards) - 1, -1, -1):
                 if new_cards[i]["id"] == card["id"]:
-                    assert card["del"]
-                    del new_cards[i]
+                    del new_cards[i] # only keep the most recent version
             if not card["del"]:
                 new_cards.append(card)
 
