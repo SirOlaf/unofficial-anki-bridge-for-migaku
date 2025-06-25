@@ -553,7 +553,10 @@ def _mm_sync_task(migaku: migaku_manager.MigakuManager, col: anki.collection.Col
                 if migaku_field_type == "SYNTAX":
                     field_str: str = migaku_card_fields[migaku_idx]
                     # TODO: This could be translated into ruby text
-                    new_note[anki_field_name] = re.sub(r"\[.*?\]", "", field_str).replace("{", "").replace("}", "")
+                    if config_get_remove_syntax():
+                        new_note[anki_field_name] = re.sub(r"\[.*?\]", "", field_str).replace("{", "").replace("}", "")
+                    else:
+                        new_note[anki_field_name] = field_str
                 elif migaku_field_type == "TEXT":
                     new_note[anki_field_name] = migaku_card_fields[migaku_idx]
                 elif migaku_field_type == "IMAGE":
